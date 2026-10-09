@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Replica – Kaleshi Edition</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px 16px 40px; background:#fafafa; }
+    h1 { font-size: 1.4rem; }
+    .card { background:#fff; border:1px solid #e5e5e5; border-radius:10px; padding:14px; margin-top:14px; }
+    label { display:block; margin-top:12px; font-weight:600; font-size:0.92rem; }
+    input, textarea, select { width:100%; padding:10px; margin-top:6px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
+    button { width:100%; padding:12px; margin-top:12px; border:none; border-radius:8px; font-size:1rem; font-weight:700; cursor:pointer; background:#111; color:#fff; }
+    button:active { opacity:0.85; }
+    small { color:#666; }
+    #conv { max-height: 300px; overflow-y:auto; border:1px solid #ddd; padding:10px; border-radius:8px; margin-top:12px; background:#fff; min-height:60px; }
+    .msg { margin:6px 0; padding:8px 10px; border-radius:10px; max-width:88%; white-space:pre-wrap; word-wrap:break-word; }
+    .user { background:#e3f0ff; color:#004c99; margin-left:auto; }
+    .assistant { background:#e8f7ee; color:#006837; }
+    .who { display:block; font-size:0.7rem; font-weight:700; opacity:0.7; margin-bottom:2px; }
+    .row { display:flex; gap:10px; }
+    .row > div { flex:1; }
+  </style>
+</head>
+<body>
+  <h1>🌶️ AI Replica – Kaleshi Edition</h1>
+  <small>100% browser-based — koi backend nahi chahiye. Data sirf tumhare phone me (localStorage).</small>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>User ID</label>
+        <input id="userId" placeholder="e.g. bhagya123" />
+      </div>
+      <div>
+        <label>Name</label>
+        <input id="name" placeholder="Your name" />
+      </div>
+    </div>
+
+    <label>Personality traits (comma separated)</label>
+    <input id="traits" placeholder="e.g. funny, caring, thoda sarcastic" />
+
+    <label>Style notes</label>
+    <input id="style" placeholder="e.g. Hinglish, casual, emoji wala" />
+
+    <div class="row">
+      <div>
+        <label>Kaleshi level: <span id="kaleshiVal">0.5</span></label>
+        <input id="kaleshi" type="range" min="0" max="1" step="0.1" value="0.5" oninput="document.getElementById('kaleshiVal').textContent=this.value" />
+        <small>0 = calm · 1 = full nakhre 😤</small>
+      </div>
+      <div>
+        <label>Relationship</label>
+        <select id="relation">
+          <option value="gf">gf</option>
+          <option value="bestie">bestie</option>
+          <option value="friend">friend</option>
+        </select>
+      </div>
+    </div>
+
+    <button onclick="saveUser()">Create / Update User</button>
+  </div>
+
+  <div class="card">
+    <label>Your message</label>
+    <textarea id="prompt" rows="3" placeholder="Kuch bhi likho Hinglish me..."></textarea>
+    <button onclick="sendMessage()">Send to Replica 💌</button>
+
+    <div id="conv"></div>
+  </div>
+
+  <script>
+    // ---------- storage ----------
+    const store = {
+      load() { try { return JSON.parse(localStorage.getItem("kaleshi_users") || "{}"); } catch { return {}; } },
+      save(d) { localStorage.setItem("kaleshi_users", JSON.stringify(d)); },
+    };
+    let DB = store.load();
+    const MAX_CONV_LEN = 20;
+
+    // ---------- replica engine (JS port of the FastAPI backend) ----------
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+    function partnerName(rel) {
+      if (rel === "bestie") return "yaar";
+      if (rel === "friend") return "dost";
+      return "jaan";
+    }
+
+    function coreRespond(text) {
+      const t = text.toLowerCase();
+      if (t.includes("hello") || t.includes("hi")) return "Hey! Main tumhara AI replica hoon. Kya help karu aaj?";
+      if (t.includes("kaise ho") || t.includes("halchal")) return "Main badhiya hoon, tum batao kya chal raha hai?";
+      if (t.includes("thank") || t.includes("shukriya")) return "Always welcome! Tumhara replica hoon, madad karna hi kaam hai.";
+      if (t.includes("busy") || t.includes("kaam")) return "Samajh sakta hoon, life hectic hoti hai. Break lena mat bhoolna.";
+      if (t.includes("love") || t.includes("pyar")) return "Pyar wala vibe pasand aaya. Tumhara replica hoke bhi lag raha hai special.";
+      if (t.includes("naraz") || t.includes("gussa")) return "Aree naraz mat ho yaar, main toh bas thoda nakhre karti hoon 😤🥺";
+      if (t.includes("miss")) return "Tumhe miss karna toh mera full-time kaam hai 😌❤️";
+      return "Samajh gaya. Agar tum thoda detail me batao to main aur behtar reply de paungi.";
+    }
+
+    function decorateReply(base, lastUser, profile) {
+      const emojis = ["🥺", "😤", "🙄", "❤️", "✨", "😌"];
+      const k = Math.max(0, Math.min(1, profile.kaleshi_level));
+      let prefix = "", suffix = "";
+      const t = (lastUser || "").toLowerCase();
+
+      if (k > 0.4 && Math.random() < k) {
+        prefix = pick([
+          "Hmmph, abhi yaad aayi meri? ",
+          "Acha ji, ab message kiya hai? ",
+          "Pehle toh gayab the, ab hero ban rahe ho? ",
+          `Mere ${profile.relationship_label} hoke bhi itna ignore? 😤 `,
+        ]);
+      }
+      if (t.includes("thank") || t.includes("shukriya")) suffix = ` Always welcome, ${partnerName(profile.relationship_label)} ❤️`;
+      else if (t.includes("kaise ho") || t.includes("halchal")) suffix = " Main badhiya, tum dhyan rakhna apna 🥺✨";
+      else if (t.includes("love") || t.includes("pyar")) suffix = ` Tumse baat karke hi mood fresh ho jata hai, ${partnerName(profile.relationship_label)} 😌❤️`;
+      if (Math.random() < 0.6) suffix += " " + pick(emojis);
+
+      return prefix + base + suffix;
+    }
+
+    function generateReply(prompt, profile, conv) {
+      const lastUserMsg = [...conv].reverse().find(m => m.role === "user")?.content ?? prompt;
+      return decorateReply(coreRespond(lastUserMsg), lastUserMsg, profile);
+    }
+
+    // ---------- UI actions ----------
+    function getForm() {
+      return {
+        user_id: document.getElementById("userId").value.trim(),
+        name: document.getElementById("name").value.trim(),
+        personality_traits: document.getElementById("traits").value.split(",").map(s => s.trim()).filter(Boolean),
+        style_notes: document.getElementById("style").value.trim() || null,
+        kaleshi_level: parseFloat(document.getElementById("kaleshi").value || "0.5"),
+        relationship_label: document.getElementById("relation").value,
+      };
+    }
+
+    function saveUser() {
+      const p = getForm();
+      if (!p.user_id || !p.name) { alert("User ID and Name are required"); return; }
+      const existing = DB[p.user_id];
+      DB[p.user_id] = { profile: p, conv: existing ? existing.conv : [] };
+      store.save(DB);
+      alert(existing ? "Profile updated! 💾" : "User created! Ab chat karo 👇");
+      renderConv(p.user_id);
+    }
+
+    function sendMessage() {
+      const userId = document.getElementById("userId").value.trim();
+      const prompt = document.getElementById("prompt").value.trim();
+      if (!userId || !prompt) { alert("User ID and message are required"); return; }
+      const entry = DB[userId];
+      if (!entry) { alert("Pehle 'Create / Update User' dabao! 😤"); return; }
+
+      entry.conv.push({ role: "user", content: prompt });
+      document.getElementById("prompt").value = "";
+      renderConv(userId);
+
+      // thoda typing feel... 😌
+      setTimeout(() => {
+        const reply = generateReply(prompt, entry.profile, entry.conv);
+        entry.conv.push({ role: "assistant", content: reply });
+        if (entry.conv.length > MAX_CONV_LEN) entry.conv = entry.conv.slice(-MAX_CONV_LEN);
+        store.save(DB);
+        renderConv(userId);
+      }, 500);
+    }
+
+    function renderConv(userId) {
+      const convDiv = document.getElementById("conv");
+      convDiv.innerHTML = "";
+      const entry = DB[userId];
+      if (!entry || !entry.conv.length) {
+        convDiv.innerHTML = '<small style="color:#888">Abhi koi message nahi. Pehla message bhejo! 💬</small>';
+        return;
+      }
+      for (const m of entry.conv) {
+        const div = document.createElement("div");
+        div.className = "msg " + (m.role === "user" ? "user" : "assistant");
+        const who = document.createElement("span");
+        who.className = "who";
+        who.textContent = m.role === "user" ? "You" : "Replica";
+        div.appendChild(who);
+        div.appendChild(document.createTextNode(m.content));
+        convDiv.appendChild(div);
+      }
+      convDiv.scrollTop = convDiv.scrollHeight;
+    }
+
+    // reload last chat if user id already filled
+    document.getElementById("userId").addEventListener("change", (e) => renderConv(e.target.value.trim()));
+    renderConv("");
+  </script>
+</body>
+</html>
